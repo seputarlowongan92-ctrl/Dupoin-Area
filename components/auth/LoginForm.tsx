@@ -5,8 +5,8 @@ import Input from '../common/Input';
 import { useAuth } from '../../context/AuthContext';
 
 const LoginForm: React.FC = () => {
-  const [identifier, setIdentifier] = useState('user@dupoin.com');
-  const [password, setPassword] = useState('password123');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ identifier?: string; password?: string; api?: string }>({});
   const { login, isLoading, error } = useAuth();
   const navigate = useNavigate();
