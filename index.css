@@ -1,0 +1,37 @@
+/* DUPOIN Global Styles */
+@layer base {
+  body {
+    background-color: #F4F6F9;
+    color: #45545C;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+/* Ensure Sarala font utility */
+.font-sarala {
+  font-family: 'Sarala', sans-serif;
+}
+
+/* TradingView Ticker Tape full width and matching reference height (72px) */
+.tradingview-widget-container,
+.tradingview-widget-container__widget {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.tradingview-widget-container iframe {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  border: none !important;
+  display: block !important;
+}
+
+@keyframes slowZoom {
+  from { transform: scale(1); }
+  to { transform: scale(1.15); }
+}
+
+.animate-slow-zoom {
+  animation: slowZoom 45s infinite alternate ease-in-out;
+}

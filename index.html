@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#22B4C3">
+    <title>DUPOIN - One Stop Trading Platform</title>
+    <link rel="icon" type="image/png" href="/logo-dupoin.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Roboto+Mono:wght@400;500&family=Sarala:wght@400;700&display=swap" rel="stylesheet">
+    <script>
+      // Prevent cross-origin third-party embed script errors (e.g. TradingView CDN) from polluting window.onerror
+      window.addEventListener('error', function(e) {
+        if (e.message === 'Script error.' || (!e.filename && e.lineno === 0) || (e.filename && e.filename.indexOf('tradingview') !== -1)) {
+          e.preventDefault && e.preventDefault();
+          return true;
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function(e) {
+        if (e.reason && (e.reason.message === 'Script error.' || String(e.reason).indexOf('tradingview') !== -1)) {
+          e.preventDefault && e.preventDefault();
+        }
+      });
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: '#08B9ED', 
+              secondary: '#89939D',
+              darkblue: '#F4F6F9', 
+              darkblue2: '#FFFFFF', 
+              headerBlue: '#08B9ED', 
+              success: '#00C99A',
+              danger: '#F20D16',
+              warning: '#F59E0B',
+              accent: '#08B9ED',
+              borderGray: '#E5E7EB',
+              textPrimary: '#45545C',
+              textSecondary: '#89939D',
+              cardBg: '#FFFFFF',
+              pageBg: '#F4F6F9'
+            },
+            fontFamily: {
+              sans: ['Inter', 'system-ui', 'sans-serif'],
+              mono: ['Roboto Mono', 'Consolas', 'monospace'],
+              sarala: ['Sarala', 'sans-serif'],
+            },
+            animation: {
+              marquee: 'marquee 30s linear infinite',
+            },
+            keyframes: {
+              marquee: {
+                '0%': { transform: 'translateX(100%)' },
+                '100%': { transform: 'translateX(-100%)' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "recharts": "https://aistudiocdn.com/recharts@^3.4.1",
+    "@heroicons/react/": "https://aistudiocdn.com/@heroicons/react@^2.2.0/",
+    "react-router-dom": "https://aistudiocdn.com/react-router-dom@^6.22.3",
+    "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/+esm"
+  }
+}
+</script>
+<style>
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #F4F6F9;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+  }
+  body {
+    background-color: #F4F6F9;
+  }
+</style>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-[#F4F6F9] font-sans text-[#45545C] antialiased selection:bg-primary selection:text-white">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+</body>
+</html>
