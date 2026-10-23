@@ -67,13 +67,14 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
       setIsLoadingTransactions(true);
       setBalance(user.balance);
       try {
-        const [deposits, withdrawals] = await Promise.all([
+        const [deposits, withdrawals, notifs] = await Promise.all([
           transactionService.getDepositHistory(user.id),
-          transactionService.getWithdrawalHistory(user.id)
+          transactionService.getWithdrawalHistory(user.id),
+          authService.getUserNotifications(user.id)
         ]);
         setDepositHistory(deposits);
         setWithdrawalHistory(withdrawals);
-        setNotifications(user.notifications || []);
+        setNotifications(notifs);
       } catch (err) {
         console.error('Error fetching transactions:', err);
       } finally {
@@ -155,6 +156,11 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     }
     if (!user) {
       const msg = 'Anda harus login untuk melakukan penarikan.';
+      setTransactionError(msg);
+      return { success: false, message: msg };
+    }
+    if (!user.isVerified) {
+      const msg = 'Akun Belum Aktif Silahkan Hubungi Admin';
       setTransactionError(msg);
       return { success: false, message: msg };
     }

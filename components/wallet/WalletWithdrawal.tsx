@@ -10,14 +10,12 @@ import {
   ChevronDownIcon, 
   BuildingLibraryIcon, 
   CheckCircleIcon,
-  ClockIcon,
   XCircleIcon,
-  ArrowPathIcon
 } from '@heroicons/react/24/solid';
 
 const WalletWithdrawal: React.FC = () => {
   const { user, savedBankAccounts, addBankAccount } = useAuth();
-  const { balance, withdraw, isLoadingTransactions, withdrawalHistory, accountMode, fetchTransactions } = useTransactions();
+  const { balance, withdraw, isLoadingTransactions, withdrawalHistory, accountMode } = useTransactions();
   
   const [amount, setAmount] = useState<string>('');
   const [method, setMethod] = useState<'bank' | 'e-wallet'>('bank');
@@ -27,9 +25,10 @@ const WalletWithdrawal: React.FC = () => {
   const [accountHolderName, setAccountHolderName] = useState<string>('');
   const [saveToSettings, setSaveToSettings] = useState<boolean>(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  const [isRefreshingHistory, setIsRefreshingHistory] = useState<boolean>(false);
+  const [historySearch, setHistorySearch] = useState<string>('');
 
   const isLowBalance = balance <= 0;
+  const isAccountDeactivated = user ? user.isVerified === false : false;
 
   // Otomatis terisi jika ada rekening penarikan yang sudah tersimpan di Pengaturan.
   useEffect(() => {
@@ -100,15 +99,15 @@ const WalletWithdrawal: React.FC = () => {
     }
   };
 
-  const handleManualRefresh = async () => {
-    setIsRefreshingHistory(true);
-    await fetchTransactions();
-    setTimeout(() => setIsRefreshingHistory(false), 500);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
+    // CEK STATUS AKTIVASI AKUN: Jika akun dinonaktifkan, blokir penarikan!
+    if (isAccountDeactivated) {
+      setMessage({ type: 'error', text: 'Akun Belum Aktif Silahkan Hubungi Admin' });
+      return;
+    }
     
     if (accountMode === 'demo') {
       setMessage({ type: 'error', text: 'Penarikan tidak dapat dilakukan pada mode Demo.' });
@@ -162,11 +161,11 @@ const WalletWithdrawal: React.FC = () => {
       const trxId = result.transactionId || ('WD-' + Date.now());
       setMessage({ 
         type: 'success', 
-        text: `Penarikan IDR Balance no ${trxId} berhasil diajukan dan disimpan di database, mohon tunggu kami akan memproses penarikan dana Anda.` 
+        text: `Penarikan IDR Balance no ${trxId} berhasil diajukan, mohon tunggu kami akan memproses penarikan dana Anda.` 
       });
       setAmount('');
     } else {
-      setMessage({ type: 'error', text: result.message || 'Penarikan gagal diproses. Periksa saldo Anda.' });
+      setMessage({ type: 'error', text: result.message || 'Penarikan gagal diproses.' });
     }
   };
 
@@ -174,9 +173,43 @@ const WalletWithdrawal: React.FC = () => {
     window.print();
   };
 
+  const formatAccountNumberDisplay = (raw: string): string => {
+    if (!raw) return '';
+    const clean = raw.trim();
+    if (clean.includes('-') || clean.includes(' ')) return clean;
+    // Format dalam kelompok 4 digit dengan tanda hubung persis seperti di gambar
+    return clean.replace(/(\d{4})(?=\d)/g, '$1-');
+  };
+
+  // Filter history based on search
+  const filteredHistory = withdrawalHistory.filter(wd => {
+    if (!historySearch.trim()) return true;
+    const lower = historySearch.toLowerCase();
+    return (
+      wd.id.toLowerCase().includes(lower) ||
+      (wd.accountNumber && wd.accountNumber.toLowerCase().includes(lower)) ||
+      (wd.bankOrEwalletName && wd.bankOrEwalletName.toLowerCase().includes(lower)) ||
+      (wd.accountHolderName && wd.accountHolderName.toLowerCase().includes(lower)) ||
+      wd.amount.toString().includes(lower)
+    );
+  });
+
   return (
     <WalletLayout>
-      {/* Alert / Feedback Banner */}
+      {/* Peringatan jika akun dinonaktifkan */}
+      {isAccountDeactivated && (
+        <div className="bg-[#F20D16]/10 border border-[#F20D16]/30 text-[#D10B12] p-4 rounded-xl font-bold text-sm mb-6 flex items-center gap-3 shadow-sm animate-pulse">
+          <XCircleIcon className="w-6 h-6 text-[#F20D16] shrink-0" />
+          <div>
+            <p className="font-extrabold text-base">Akun Belum Aktif Silahkan Hubungi Admin</p>
+            <p className="font-normal text-xs text-[#89939D] mt-0.5">
+              Akun Anda saat ini dinonaktifkan oleh administrator. Fitur penarikan dana sementara tidak dapat digunakan.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Alert Feedback Banner */}
       {message && message.type === 'success' && (
         <div className="bg-[#00C99A] text-white p-4 rounded-xl font-medium text-sm leading-relaxed mb-6 shadow-sm border border-emerald-400/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -197,9 +230,10 @@ const WalletWithdrawal: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Withdrawal Form */}
-        <div className="lg:col-span-1">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* ================= LEFT COLUMN: WITHDRAWAL FORM (4 cols) ================= */}
+        <div className="lg:col-span-5">
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
             <div className="p-5 border-b border-gray-100 flex items-center justify-between">
               <h3 className="text-[#45545C] text-xl font-bold tracking-tight">Withdrawal</h3>
@@ -245,6 +279,7 @@ const WalletWithdrawal: React.FC = () => {
                     className="w-full bg-white border border-gray-300 rounded-lg px-3.5 py-2.5 text-[#45545C] text-sm outline-none focus:border-[#08B9ED] appearance-none pr-8 cursor-pointer"
                     value={selectedAccountChoice}
                     onChange={(e) => handleAccountChoiceChange(e.target.value)}
+                    disabled={isAccountDeactivated}
                   >
                     <option value="">-- Pilih Rekening / Bank Penarikan --</option>
                     
@@ -279,6 +314,7 @@ const WalletWithdrawal: React.FC = () => {
                   className="w-full bg-white border border-gray-300 rounded-lg px-3.5 py-2 text-[#45545C] text-sm outline-none focus:border-[#08B9ED] mt-2 font-sans tabular-nums placeholder:text-gray-400"
                   value={accountNumber}
                   onChange={e => setAccountNumber(e.target.value)}
+                  disabled={isAccountDeactivated}
                 />
                 <input 
                   type="text"
@@ -286,6 +322,7 @@ const WalletWithdrawal: React.FC = () => {
                   className="w-full bg-white border border-gray-300 rounded-lg px-3.5 py-2 text-[#45545C] text-sm outline-none focus:border-[#08B9ED] mt-2 uppercase placeholder:text-gray-400"
                   value={accountHolderName}
                   onChange={e => setAccountHolderName(e.target.value)}
+                  disabled={isAccountDeactivated}
                 />
 
                 {selectedAccountChoice.startsWith('saved:') ? (
@@ -309,11 +346,12 @@ const WalletWithdrawal: React.FC = () => {
                           type="checkbox"
                           checked={saveToSettings}
                           onChange={(e) => setSaveToSettings(e.target.checked)}
+                          disabled={isAccountDeactivated}
                           className="w-4 h-4 text-[#08B9ED] rounded border-gray-300 focus:ring-[#08B9ED] cursor-pointer"
                         />
                         <span className="font-medium">Simpan rekening ini ke Pengaturan Akun</span>
                       </label>
-                      {accountNumber && accountHolderName && bankOrEwalletName && (
+                      {accountNumber && accountHolderName && bankOrEwalletName && !isAccountDeactivated && (
                         <button
                           type="button"
                           onClick={handleQuickSaveToSettings}
@@ -340,19 +378,35 @@ const WalletWithdrawal: React.FC = () => {
                     className="flex-1 bg-white px-3.5 py-2.5 text-[#45545C] text-sm outline-none font-sans tabular-nums placeholder:text-[#89939D]"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
+                    disabled={isAccountDeactivated}
                   />
                 </div>
               </div>
 
               {/* Submit Button */}
               <div className="pt-2">
-                <button 
-                  type="submit" 
-                  disabled={isLoadingTransactions} 
-                  className="w-full sm:w-auto bg-[#08B9ED] hover:bg-[#07A6D5] text-white font-bold py-2.5 px-6 rounded-lg text-sm transition-all shadow-sm active:scale-[0.99] disabled:opacity-60 cursor-pointer"
-                >
-                  {isLoadingTransactions ? 'Memproses...' : 'Submit Withdrawal'}
-                </button>
+                {isAccountDeactivated ? (
+                  <div className="space-y-2">
+                    <button 
+                      type="button" 
+                      disabled={true}
+                      className="w-full bg-gray-400 text-white font-bold py-2.5 px-6 rounded-lg text-sm cursor-not-allowed opacity-80 shadow-none"
+                    >
+                      Akun Belum Aktif Silahkan Hubungi Admin
+                    </button>
+                    <p className="text-xs text-red-600 text-center font-semibold">
+                      Akun Belum Aktif Silahkan Hubungi Admin
+                    </p>
+                  </div>
+                ) : (
+                  <button 
+                    type="submit" 
+                    disabled={isLoadingTransactions} 
+                    className="w-full sm:w-auto bg-[#08B9ED] hover:bg-[#07A6D5] text-white font-bold py-2.5 px-6 rounded-lg text-sm transition-all shadow-sm active:scale-[0.99] disabled:opacity-60 cursor-pointer"
+                  >
+                    {isLoadingTransactions ? 'Memproses...' : 'Submit Withdrawal'}
+                  </button>
+                )}
               </div>
 
               {/* Notice Box */}
@@ -370,98 +424,159 @@ const WalletWithdrawal: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Column: History Table */}
-        <div className="lg:col-span-2">
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm h-full flex flex-col">
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-[#45545C] text-xl font-bold tracking-tight">Withdrawal History</h3>
-              <button
-                onClick={handleManualRefresh}
-                disabled={isRefreshingHistory}
-                className="flex items-center gap-1.5 text-xs text-[#08B9ED] hover:text-[#07A6D5] font-semibold bg-cyan-50 hover:bg-cyan-100/70 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-                title="Perbarui riwayat penarikan dari database"
-              >
-                <ArrowPathIcon className={`w-3.5 h-3.5 ${isRefreshingHistory ? 'animate-spin' : ''}`} />
-                <span>{isRefreshingHistory ? 'Menyinkronkan...' : 'Refresh Riwayat'}</span>
-              </button>
+        {/* ================= RIGHT COLUMN: WITHDRAWAL HISTORY (7 cols, EXACT MATCH TO SCREENSHOTS) ================= */}
+        <div className="lg:col-span-7">
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+            
+            {/* Dark Slate Top Header Bar from Screenshot: "Withdrawal History" */}
+            <div className="bg-[#38485B] px-5 py-3.5 flex items-center justify-between">
+              <h3 className="text-white text-lg font-medium tracking-wide">
+                Withdrawal History
+              </h3>
             </div>
             
             <div className="p-5 flex-1 flex flex-col justify-between">
               <div>
-                <div className="flex space-x-2 mb-4">
-                  <button onClick={handlePrint} className="bg-[#08B9ED] text-white text-xs px-3.5 py-1.5 rounded-md font-semibold hover:bg-[#07A6D5] transition-colors cursor-pointer">
-                    Print / PDF
+                {/* PDF and Print Buttons */}
+                <div className="flex space-x-2 mb-3">
+                  <button 
+                    onClick={handlePrint}
+                    className="bg-[#0096EB] hover:bg-[#0084D1] text-white text-xs px-4 py-1.5 rounded font-medium transition-colors shadow-xs cursor-pointer"
+                  >
+                    PDF
+                  </button>
+                  <button 
+                    onClick={handlePrint}
+                    className="bg-[#0096EB] hover:bg-[#0084D1] text-white text-xs px-4 py-1.5 rounded font-medium transition-colors shadow-xs cursor-pointer"
+                  >
+                    Print
                   </button>
                 </div>
+
+                {/* Filter / Search Box from Screenshot */}
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                    placeholder=""
+                    className="w-48 bg-white border border-gray-300 rounded px-2.5 py-1 text-xs text-gray-700 outline-none focus:border-[#0096EB]"
+                  />
+                </div>
                 
-                <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                  <table className="w-full text-left border-collapse">
+                {/* History Table matching screenshot */}
+                <div className="overflow-x-auto border border-gray-200 rounded-none">
+                  <table className="w-full text-center border-collapse border border-gray-200">
                     <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200 text-[#89939D] text-xs font-semibold">
-                        <th className="p-3 border-r border-gray-200">Tanggal & ID</th>
-                        <th className="p-3 border-r border-gray-200">Nominal</th>
-                        <th className="p-3 border-r border-gray-200">Rekening Tujuan</th>
-                        <th className="p-3">Status</th>
+                      <tr className="bg-white border-b border-gray-200 text-[#5A6A7E] text-xs font-semibold">
+                        <th className="p-3 border-r border-gray-200 w-24">
+                          <div className="inline-flex items-center gap-1">
+                            <span>Fee</span>
+                            <span className="text-[10px] text-gray-400">⬍</span>
+                          </div>
+                        </th>
+                        <th className="p-3 border-r border-gray-200 w-36">
+                          <div className="inline-flex items-center gap-1">
+                            <span>Received</span>
+                            <span className="text-[10px] text-gray-400">⬍</span>
+                          </div>
+                        </th>
+                        <th className="p-3 border-r border-gray-200">
+                          <div className="inline-flex items-center gap-1">
+                            <span>Berita</span>
+                            <span className="text-[10px] text-gray-400">⬍</span>
+                          </div>
+                        </th>
+                        <th className="p-3 w-32">
+                          <div className="inline-flex items-center gap-1">
+                            <span>Status</span>
+                            <span className="text-[10px] text-gray-400">⬍</span>
+                          </div>
+                        </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {withdrawalHistory.map(wd => {
-                        const isSuccess = wd.status === TransactionStatus.SUCCESS;
+                    <tbody className="divide-y divide-gray-200">
+                      {filteredHistory.map(wd => {
+                        const isDone = wd.status === TransactionStatus.SUCCESS;
                         const isPending = wd.status === TransactionStatus.PENDING;
                         const isRejected = wd.status === TransactionStatus.REJECTED || wd.status === TransactionStatus.CANCELLED || wd.status === TransactionStatus.FAILED;
 
+                        // ATUR WARNA TEKS SESUAI INSTRUKSI USER:
+                        // "teksnya juga merah kalau masih pending dan teksya jadi hitam jika done"
+                        const textColorClass = isPending 
+                          ? 'text-[#C0392B]' 
+                          : isDone 
+                          ? 'text-[#2B3442]' 
+                          : 'text-[#C0392B]';
+
                         return (
-                          <tr key={wd.id} className="text-xs hover:bg-slate-50 transition-colors">
-                            <td className="p-3 border-r border-gray-200 whitespace-nowrap">
-                              <div className="font-mono text-xs font-bold text-[#45545C]">{wd.id}</div>
-                              <div className="text-[#89939D] text-[11px]">
-                                {new Date(wd.date).toLocaleDateString('id-ID', {
-                                  day: 'numeric',
-                                  month: 'short',
-                                  year: 'numeric'
-                                })}, {new Date(wd.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                          <tr key={wd.id} className="text-xs transition-colors hover:bg-slate-50/50">
+                            
+                            {/* Fee Cell */}
+                            <td className={`p-4 border-r border-gray-200 font-sans tabular-nums align-top ${textColorClass}`}>
+                              Rp 0
+                            </td>
+
+                            {/* Received Cell (Dua baris persis seperti di screenshot) */}
+                            <td className={`p-4 border-r border-gray-200 font-sans align-top ${textColorClass}`}>
+                              <div>Rp</div>
+                              <div className="font-medium mt-0.5">
+                                {wd.amount.toLocaleString('en-US')}
                               </div>
                             </td>
-                            <td className="p-3 text-[#45545C] border-r border-gray-200 font-bold font-sans tabular-nums whitespace-nowrap">
-                              <div className="text-sm">Rp {wd.amount.toLocaleString('id-ID')}</div>
-                              <div className="text-[11px] text-[#89939D] font-normal">Fee: Rp 0</div>
+
+                            {/* Berita Cell (Persis seperti di screenshot) */}
+                            <td className={`p-4 border-r border-gray-200 text-center leading-relaxed align-top ${textColorClass}`}>
+                              <div>Withdrawal</div>
+                              <div>IDR</div>
+                              <div>Balance</div>
+                              <div>To: Bank</div>
+                              <div>Account</div>
+                              <div className="uppercase">
+                                (IDR) {wd.accountHolderName}
+                              </div>
+                              <div className="uppercase font-medium">
+                                {wd.bankOrEwalletName || wd.method}
+                              </div>
+                              <div className="font-sans font-medium tracking-wider">
+                                {formatAccountNumberDisplay(wd.accountNumber)}
+                              </div>
                             </td>
-                            <td className="p-3 text-[#45545C] border-r border-gray-200 max-w-xs leading-relaxed">
-                              <div className="font-bold text-[#08B9ED] uppercase">{wd.bankOrEwalletName || wd.method}</div>
-                              <div className="font-sans font-bold tabular-nums text-[#45545C]">{wd.accountNumber}</div>
-                              <div className="uppercase text-[#89939D] text-[11px]">a.n. {wd.accountHolderName}</div>
-                            </td>
-                            <td className="p-3 whitespace-nowrap">
-                              {isSuccess && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-white font-bold text-[11px] bg-[#00C99A]">
-                                  <CheckCircleIcon className="w-3.5 h-3.5" />
-                                  <span>Done (Selesai)</span>
+
+                            {/* Status Cell (Badge Done hijau / Pending salmon peach persis seperti di screenshot) */}
+                            <td className="p-4 align-top text-center">
+                              {isDone && (
+                                <span className="inline-block px-4 py-1.5 rounded-lg text-white font-medium text-xs bg-[#00BA88] shadow-xs">
+                                  Done
                                 </span>
                               )}
+
                               {isPending && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-white font-bold text-[11px] bg-amber-500 animate-pulse">
-                                  <ClockIcon className="w-3.5 h-3.5" />
-                                  <span>Pending (Proses)</span>
+                                <span className="inline-block px-4 py-1.5 rounded-lg text-white font-medium text-xs bg-[#EB7654] shadow-xs">
+                                  Pending
                                 </span>
                               )}
+
                               {isRejected && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-white font-bold text-[11px] bg-[#F20D16]">
-                                  <XCircleIcon className="w-3.5 h-3.5" />
-                                  <span>Ditolak</span>
+                                <span className="inline-block px-4 py-1.5 rounded-lg text-white font-medium text-xs bg-[#DC2626] shadow-xs">
+                                  Rejected
                                 </span>
                               )}
-                              {!isSuccess && !isPending && !isRejected && (
-                                <span className="px-2.5 py-1 rounded-md text-gray-700 bg-gray-200 font-bold text-[11px]">
+
+                              {!isDone && !isPending && !isRejected && (
+                                <span className="inline-block px-3 py-1 rounded text-gray-700 bg-gray-200 font-medium text-xs">
                                   {wd.status}
                                 </span>
                               )}
                             </td>
+
                           </tr>
                         );
                       })}
-                      {withdrawalHistory.length === 0 && (
+
+                      {filteredHistory.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="p-8 text-center text-[#89939D] text-xs">
+                          <td colSpan={4} className="p-12 text-center text-gray-400 text-xs">
                             Belum ada riwayat penarikan dana.
                           </td>
                         </tr>
@@ -471,16 +586,29 @@ const WalletWithdrawal: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex justify-between items-center mt-6 text-xs text-[#89939D]">
-                <span>Menampilkan {withdrawalHistory.length} transaksi penarikan</span>
-                <div className="flex items-center space-x-2">
-                  <span>Halaman</span>
-                  <span className="bg-[#08B9ED] text-white w-6 h-6 flex items-center justify-center rounded-md font-bold">1</span>
-                </div>
+              {/* Bottom Pagination Matching Screenshot: Previous [ 1 ] Next */}
+              <div className="flex items-center justify-center gap-3 mt-8 text-xs text-[#89939D]">
+                <button 
+                  type="button"
+                  className="hover:text-gray-700 transition-colors cursor-pointer"
+                >
+                  Previous
+                </button>
+                <span className="w-6 h-6 bg-[#EBA315] text-white font-bold rounded flex items-center justify-center text-xs shadow-xs">
+                  1
+                </span>
+                <button 
+                  type="button"
+                  className="hover:text-gray-700 transition-colors cursor-pointer"
+                >
+                  Next
+                </button>
               </div>
+
             </div>
           </div>
         </div>
+
       </div>
     </WalletLayout>
   );

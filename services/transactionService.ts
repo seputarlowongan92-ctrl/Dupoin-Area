@@ -164,7 +164,13 @@ export const withdraw = async (
   accountHolderName: string,
 ): Promise<{ success: boolean; transaction?: WithdrawalTransaction; message?: string }> => {
   const user = await authService.getCurrentUser();
-  if (!user || user.balance < amount) {
+  if (!user) {
+    return { success: false, message: 'Anda harus login untuk melakukan penarikan.' };
+  }
+  if (!user.isVerified) {
+    return { success: false, message: 'Akun Belum Aktif Silahkan Hubungi Admin' };
+  }
+  if (user.balance < amount) {
     return { success: false, message: 'Saldo tidak mencukupi untuk melakukan penarikan.' };
   }
 

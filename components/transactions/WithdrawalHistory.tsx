@@ -1,12 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../context/TransactionContext';
 import { WithdrawalTransaction, TransactionStatus } from '../../types';
-import { CheckCircleIcon, ClockIcon, XCircleIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 
 const WithdrawalHistory: React.FC = () => {
   const { user } = useAuth();
-  const { withdrawalHistory, isLoadingTransactions, fetchTransactions } = useTransactions();
+  const { withdrawalHistory, isLoadingTransactions } = useTransactions();
+  const [historySearch, setHistorySearch] = useState('');
 
   if (!user) {
     return (
@@ -16,103 +16,205 @@ const WithdrawalHistory: React.FC = () => {
     );
   }
 
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const formatAccountNumberDisplay = (raw: string): string => {
+    if (!raw) return '';
+    const clean = raw.trim();
+    if (clean.includes('-') || clean.includes(' ')) return clean;
+    return clean.replace(/(\d{4})(?=\d)/g, '$1-');
+  };
+
+  const filteredHistory = withdrawalHistory.filter(wd => {
+    if (!historySearch.trim()) return true;
+    const lower = historySearch.toLowerCase();
+    return (
+      wd.id.toLowerCase().includes(lower) ||
+      (wd.accountNumber && wd.accountNumber.toLowerCase().includes(lower)) ||
+      (wd.bankOrEwalletName && wd.bankOrEwalletName.toLowerCase().includes(lower)) ||
+      (wd.accountHolderName && wd.accountHolderName.toLowerCase().includes(lower)) ||
+      wd.amount.toString().includes(lower)
+    );
+  });
+
   return (
-    <div className="container mx-auto font-sans">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#45545C]">Riwayat Penarikan Dana</h2>
-          <p className="text-sm text-[#89939D]">Daftar seluruh riwayat penarikan dana ke rekening Anda.</p>
+    <div className="container mx-auto font-sans max-w-4xl py-6">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+        {/* Top Dark Slate Header Bar from User Screenshot */}
+        <div className="bg-[#38485B] px-5 py-3.5 flex items-center justify-between">
+          <h3 className="text-white text-lg font-medium tracking-wide">
+            Withdrawal History
+          </h3>
         </div>
-        <button
-          onClick={() => fetchTransactions()}
-          disabled={isLoadingTransactions}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-[#45545C] hover:bg-slate-50 transition-colors shadow-sm cursor-pointer"
-        >
-          <ArrowPathIcon className={`w-3.5 h-3.5 text-[#08B9ED] ${isLoadingTransactions ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
-      </div>
 
-      <div className="bg-white border border-gray-200 p-6 rounded-xl shadow-sm overflow-x-auto">
-        {isLoadingTransactions ? (
-          <p className="text-center text-gray-400 py-8">Memuat riwayat penarikan dari database...</p>
-        ) : withdrawalHistory.length === 0 ? (
-          <p className="text-center text-gray-400 py-8">Belum ada riwayat penarikan dana.</p>
-        ) : (
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-[#F8FAFC]">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#89939D] uppercase tracking-wider">
-                  Tanggal & ID
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#89939D] uppercase tracking-wider">
-                  Jumlah Penarikan
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#89939D] uppercase tracking-wider">
-                  Metode & Rekening Tujuan
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#89939D] uppercase tracking-wider">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 bg-white">
-              {withdrawalHistory.map((transaction: WithdrawalTransaction) => {
-                const isSuccess = transaction.status === TransactionStatus.SUCCESS;
-                const isPending = transaction.status === TransactionStatus.PENDING;
-                const isRejected = transaction.status === TransactionStatus.REJECTED || transaction.status === TransactionStatus.CANCELLED || transaction.status === TransactionStatus.FAILED;
+        <div className="p-5 flex-1 flex flex-col justify-between">
+          <div>
+            {/* Action buttons */}
+            <div className="flex space-x-2 mb-3">
+              <button 
+                onClick={handlePrint}
+                className="bg-[#0096EB] hover:bg-[#0084D1] text-white text-xs px-4 py-1.5 rounded font-medium transition-colors shadow-xs cursor-pointer"
+              >
+                PDF
+              </button>
+              <button 
+                onClick={handlePrint}
+                className="bg-[#0096EB] hover:bg-[#0084D1] text-white text-xs px-4 py-1.5 rounded font-medium transition-colors shadow-xs cursor-pointer"
+              >
+                Print
+              </button>
+            </div>
 
-                return (
-                  <tr key={transaction.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-xs font-bold text-[#45545C] font-mono">{transaction.id}</div>
-                      <div className="text-[11px] text-[#89939D]">
-                        {new Date(transaction.date).toLocaleDateString('id-ID', {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric'
-                        })}, {new Date(transaction.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+            {/* Filter Input */}
+            <div className="mb-4">
+              <input
+                type="text"
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder=""
+                className="w-48 bg-white border border-gray-300 rounded px-2.5 py-1 text-xs text-gray-700 outline-none focus:border-[#0096EB]"
+              />
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto border border-gray-200">
+              <table className="w-full text-center border-collapse border border-gray-200">
+                <thead>
+                  <tr className="bg-white border-b border-gray-200 text-[#5A6A7E] text-xs font-semibold">
+                    <th className="p-3 border-r border-gray-200 w-24">
+                      <div className="inline-flex items-center gap-1">
+                        <span>Fee</span>
+                        <span className="text-[10px] text-gray-400">⬍</span>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-[#45545C] font-bold font-sans tabular-nums">
-                      Rp {transaction.amount.toLocaleString('id-ID')}
-                    </td>
-                    <td className="px-6 py-4 text-xs text-[#45545C]">
-                      <div className="font-bold text-[#08B9ED] uppercase">{transaction.bankOrEwalletName || transaction.method}</div>
-                      <div className="font-mono text-xs">{transaction.accountNumber}</div>
-                      <div className="text-[#89939D] uppercase">a.n. {transaction.accountHolderName}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {isSuccess && (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#00C99A]/15 text-[#009E78] border border-[#00C99A]/30">
-                          <CheckCircleIcon className="w-4 h-4 text-[#00C99A]" />
-                          <span>Done (Selesai)</span>
-                        </span>
-                      )}
-                      {isPending && (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-300 animate-pulse">
-                          <ClockIcon className="w-4 h-4 text-amber-600" />
-                          <span>Pending (Proses)</span>
-                        </span>
-                      )}
-                      {isRejected && (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#F20D16]/10 text-[#F20D16] border border-[#F20D16]/30">
-                          <XCircleIcon className="w-4 h-4 text-[#F20D16]" />
-                          <span>Ditolak</span>
-                        </span>
-                      )}
-                      {!isSuccess && !isPending && !isRejected && (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700">
-                          {transaction.status}
-                        </span>
-                      )}
-                    </td>
+                    </th>
+                    <th className="p-3 border-r border-gray-200 w-36">
+                      <div className="inline-flex items-center gap-1">
+                        <span>Received</span>
+                        <span className="text-[10px] text-gray-400">⬍</span>
+                      </div>
+                    </th>
+                    <th className="p-3 border-r border-gray-200">
+                      <div className="inline-flex items-center gap-1">
+                        <span>Berita</span>
+                        <span className="text-[10px] text-gray-400">⬍</span>
+                      </div>
+                    </th>
+                    <th className="p-3 w-32">
+                      <div className="inline-flex items-center gap-1">
+                        <span>Status</span>
+                        <span className="text-[10px] text-gray-400">⬍</span>
+                      </div>
+                    </th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {isLoadingTransactions ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-gray-400 text-xs">
+                        Memuat riwayat penarikan...
+                      </td>
+                    </tr>
+                  ) : filteredHistory.map((wd: WithdrawalTransaction) => {
+                    const isDone = wd.status === TransactionStatus.SUCCESS;
+                    const isPending = wd.status === TransactionStatus.PENDING;
+                    const isRejected = wd.status === TransactionStatus.REJECTED || wd.status === TransactionStatus.CANCELLED || wd.status === TransactionStatus.FAILED;
+
+                    const textColorClass = isPending 
+                      ? 'text-[#C0392B]' 
+                      : isDone 
+                      ? 'text-[#2B3442]' 
+                      : 'text-[#C0392B]';
+
+                    return (
+                      <tr key={wd.id} className="text-xs transition-colors hover:bg-slate-50/50">
+                        {/* Fee */}
+                        <td className={`p-4 border-r border-gray-200 font-sans align-top ${textColorClass}`}>
+                          Rp 0
+                        </td>
+
+                        {/* Received */}
+                        <td className={`p-4 border-r border-gray-200 font-sans align-top ${textColorClass}`}>
+                          <div>Rp</div>
+                          <div className="font-medium mt-0.5">
+                            {wd.amount.toLocaleString('en-US')}
+                          </div>
+                        </td>
+
+                        {/* Berita */}
+                        <td className={`p-4 border-r border-gray-200 text-center leading-relaxed align-top ${textColorClass}`}>
+                          <div>Withdrawal</div>
+                          <div>IDR</div>
+                          <div>Balance</div>
+                          <div>To: Bank</div>
+                          <div>Account</div>
+                          <div className="uppercase">
+                            (IDR) {wd.accountHolderName}
+                          </div>
+                          <div className="uppercase font-medium">
+                            {wd.bankOrEwalletName || wd.method}
+                          </div>
+                          <div className="font-sans font-medium tracking-wider">
+                            {formatAccountNumberDisplay(wd.accountNumber)}
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td className="p-4 align-top text-center">
+                          {isDone && (
+                            <span className="inline-block px-4 py-1.5 rounded-lg text-white font-medium text-xs bg-[#00BA88] shadow-xs">
+                              Done
+                            </span>
+                          )}
+
+                          {isPending && (
+                            <span className="inline-block px-4 py-1.5 rounded-lg text-white font-medium text-xs bg-[#EB7654] shadow-xs">
+                              Pending
+                            </span>
+                          )}
+
+                          {isRejected && (
+                            <span className="inline-block px-4 py-1.5 rounded-lg text-white font-medium text-xs bg-[#DC2626] shadow-xs">
+                              Rejected
+                            </span>
+                          )}
+
+                          {!isDone && !isPending && !isRejected && (
+                            <span className="inline-block px-3 py-1 rounded text-gray-700 bg-gray-200 font-medium text-xs">
+                              {wd.status}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {!isLoadingTransactions && filteredHistory.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="p-12 text-center text-gray-400 text-xs">
+                        Belum ada riwayat penarikan dana.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-center gap-3 mt-8 text-xs text-[#89939D]">
+            <button type="button" className="hover:text-gray-700 transition-colors cursor-pointer">
+              Previous
+            </button>
+            <span className="w-6 h-6 bg-[#EBA315] text-white font-bold rounded flex items-center justify-center text-xs shadow-xs">
+              1
+            </span>
+            <button type="button" className="hover:text-gray-700 transition-colors cursor-pointer">
+              Next
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

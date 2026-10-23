@@ -354,11 +354,51 @@ export const updateUserNotification = async (userId: string, notificationId: str
   }
 };
 
+export const getUserNotifications = async (userId: string): Promise<NotificationItem[]> => {
+  let dbNotifs: NotificationItem[] = [];
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false });
+
+    if (!error && Array.isArray(data)) {
+      dbNotifs = data.map((n: any) => ({
+        id: n.id,
+        userId: n.user_id,
+        message: n.message,
+        date: n.date,
+        read: Boolean(n.read),
+      }));
+    }
+  } catch (err) {
+    console.warn('Error fetching notifications from Supabase:', err);
+  }
+
+  const localUsers = getLocalUsers();
+  const u = localUsers.find(usr => usr.id === userId);
+  const localNotifs = u?.notifications || [];
+
+  const map = new Map<string, NotificationItem>();
+  for (const item of localNotifs) {
+    map.set(item.id, item);
+  }
+  for (const item of dbNotifs) {
+    map.set(item.id, item);
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+};
+
 export const addUserNotification = async (userId: string, message: string): Promise<void> => {
+  const notifId = 'notif-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
   const localUsers = getLocalUsers();
   const u = localUsers.find(user => user.id === userId);
   const newNotif: NotificationItem = {
-    id: 'notif-' + Date.now(),
+    id: notifId,
     userId,
     message,
     date: new Date().toISOString(),
@@ -376,7 +416,13 @@ export const addUserNotification = async (userId: string, message: string): Prom
   }
 
   try {
-    await supabase.from('notifications').insert([{ user_id: userId, message, date: newNotif.date, read: false }]);
+    await supabase.from('notifications').insert([{ 
+      id: notifId, 
+      user_id: userId, 
+      message, 
+      date: newNotif.date, 
+      read: false 
+    }]);
   } catch {
     // local fallback handled
   }
