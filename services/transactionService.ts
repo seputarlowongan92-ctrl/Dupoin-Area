@@ -34,6 +34,12 @@ const DEFAULT_BANKS: CompanyBankInfo[] = [
   }
 ];
 
+const generateTransactionId = (prefix: 'WD' | 'DEP' | 'TRF'): string => {
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const randomNum = Math.floor(100000 + Math.random() * 900000);
+  return `${prefix}-${dateStr}-${randomNum}`;
+};
+
 const getLocalBanks = (): CompanyBankInfo[] => {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_BANKS_KEY);
@@ -94,7 +100,7 @@ export const setCompanyBankInfoList = async (infoList: CompanyBankInfo[]): Promi
     const dbItems = infoList.map(i => ({
       bank_name: i.bankName,
       account_number: i.accountNumber,
-      accountHolderName: i.accountHolderName
+      account_holder_name: i.accountHolderName
     }));
     await supabase.from('company_bank_info').insert(dbItems);
   } catch {
@@ -102,9 +108,10 @@ export const setCompanyBankInfoList = async (infoList: CompanyBankInfo[]): Promi
   }
 };
 
-export const deposit = async (userId: string, amount: number): Promise<boolean> => {
+export const deposit = async (userId: string, amount: number): Promise<{ success: boolean; transaction?: DepositTransaction }> => {
+  const txId = generateTransactionId('DEP');
   const newDeposit: DepositTransaction = {
-    id: 'dep-' + Date.now(),
+    id: txId,
     userId,
     type: TransactionType.DEPOSIT,
     amount,
@@ -114,27 +121,38 @@ export const deposit = async (userId: string, amount: number): Promise<boolean> 
     companyBankInfoList: getLocalBanks()
   };
 
+  // Simpan ke cache lokal
   const localTxs = getLocalTransactions();
-  saveLocalTransactions([newDeposit, ...localTxs]);
+  saveLocalTransactions([newDeposit, ...localTxs.filter(t => t.id !== txId)]);
 
-  await authService.addUserNotification(userId, `Deposit sebesar Rp ${amount.toLocaleString('en-US')} sedang diproses. Mohon kirim bukti transfer ke admin.`);
+  // Notifikasi member
+  await authService.addUserNotification(
+    userId,
+    `Deposit sebesar Rp ${amount.toLocaleString('id-ID')} (ID: ${txId}) sedang diproses. Mohon kirim bukti transfer ke admin.`
+  );
 
+  // Simpan ke database Supabase
   try {
-    await supabase
+    const { error: dbError } = await supabase
       .from('transactions')
       .insert([{
+        id: newDeposit.id,
         user_id: userId,
         type: TransactionType.DEPOSIT,
         amount: amount,
         method: 'Bank Transfer',
         status: TransactionStatus.PENDING,
         date: newDeposit.date,
+        created_at: new Date().toISOString()
       }]);
-  } catch {
-    // handled locally
+    if (dbError) {
+      console.warn('Gagal menyimpan deposit ke database Supabase:', dbError);
+    }
+  } catch (err) {
+    console.warn('Error saving deposit to database:', err);
   }
 
-  return true;
+  return { success: true, transaction: newDeposit };
 };
 
 export const withdraw = async (
@@ -144,16 +162,19 @@ export const withdraw = async (
   bankOrEwalletName: string,
   accountNumber: string,
   accountHolderName: string,
-): Promise<boolean> => {
+): Promise<{ success: boolean; transaction?: WithdrawalTransaction; message?: string }> => {
   const user = await authService.getCurrentUser();
-  if (!user || user.balance < amount) return false;
+  if (!user || user.balance < amount) {
+    return { success: false, message: 'Saldo tidak mencukupi untuk melakukan penarikan.' };
+  }
 
-  // Deduct balance
+  // Deduct balance user segera saat penarikan diajukan
   const newBalance = user.balance - amount;
   await authService.updateUserBalance(userId, newBalance);
 
+  const txId = generateTransactionId('WD');
   const newWithdrawal: WithdrawalTransaction = {
-    id: 'wd-' + Date.now(),
+    id: txId,
     userId,
     type: TransactionType.WITHDRAWAL,
     amount,
@@ -165,15 +186,22 @@ export const withdraw = async (
     date: new Date().toISOString()
   };
 
+  // Simpan ke cache lokal
   const localTxs = getLocalTransactions();
-  saveLocalTransactions([newWithdrawal, ...localTxs]);
+  saveLocalTransactions([newWithdrawal, ...localTxs.filter(t => t.id !== txId)]);
 
-  await authService.addUserNotification(userId, `Permintaan Penarikan (Withdrawal) sebesar Rp ${amount.toLocaleString('en-US')} sedang diproses.`);
+  // Notifikasi member
+  await authService.addUserNotification(
+    userId,
+    `Permintaan Penarikan (Withdrawal) Rp ${amount.toLocaleString('id-ID')} ke ${bankOrEwalletName} (${accountNumber}) dengan ID ${txId} sedang diproses.`
+  );
 
+  // Simpan ke database Supabase
   try {
-    await supabase
+    const { error: dbError } = await supabase
       .from('transactions')
       .insert([{
+        id: newWithdrawal.id,
         user_id: userId,
         type: TransactionType.WITHDRAWAL,
         amount: amount,
@@ -183,12 +211,16 @@ export const withdraw = async (
         account_holder_name: accountHolderName,
         status: TransactionStatus.PENDING,
         date: newWithdrawal.date,
+        created_at: new Date().toISOString()
       }]);
-  } catch {
-    // handled locally
+    if (dbError) {
+      console.warn('Gagal menyimpan penarikan ke database Supabase:', dbError);
+    }
+  } catch (err) {
+    console.warn('Error saving withdrawal to database:', err);
   }
 
-  return true;
+  return { success: true, transaction: newWithdrawal };
 };
 
 export const transfer = async (userId: string, recipientEmail: string, amount: number): Promise<{ success: boolean; message: string }> => {
@@ -208,8 +240,9 @@ export const transfer = async (userId: string, recipientEmail: string, amount: n
   await authService.updateUserBalance(sender.id, sender.balance - amount);
   await authService.updateUserBalance(recipient.id, recipient.balance + amount);
 
+  const txId = generateTransactionId('TRF');
   const tx: TransferTransaction = {
-    id: 'trf-' + Date.now(),
+    id: txId,
     userId,
     type: TransactionType.TRANSFER,
     amount,
@@ -220,15 +253,38 @@ export const transfer = async (userId: string, recipientEmail: string, amount: n
   };
 
   const localTxs = getLocalTransactions();
-  saveLocalTransactions([tx, ...localTxs]);
+  saveLocalTransactions([tx, ...localTxs.filter(t => t.id !== txId)]);
 
-  await authService.addUserNotification(sender.id, `Transfer Berhasil: Mengirim Rp ${amount.toLocaleString('en-US')} ke ${recipientEmail}.`);
-  await authService.addUserNotification(recipient.id, `Dana Masuk: Menerima Rp ${amount.toLocaleString('en-US')} dari ${sender.email}.`);
+  await authService.addUserNotification(sender.id, `Transfer Berhasil: Mengirim Rp ${amount.toLocaleString('id-ID')} ke ${recipientEmail}.`);
+  await authService.addUserNotification(recipient.id, `Dana Masuk: Menerima Rp ${amount.toLocaleString('id-ID')} dari ${sender.email}.`);
+
+  try {
+    const { error: dbError } = await supabase
+      .from('transactions')
+      .insert([{
+        id: tx.id,
+        user_id: userId,
+        type: TransactionType.TRANSFER,
+        amount: amount,
+        method: 'Internal Transfer',
+        bank_or_ewallet_name: recipientEmail,
+        recipient_email: recipientEmail,
+        status: TransactionStatus.SUCCESS,
+        date: tx.date,
+        created_at: new Date().toISOString()
+      }]);
+    if (dbError) {
+      console.warn('Gagal menyimpan transfer ke database Supabase:', dbError);
+    }
+  } catch (err) {
+    console.warn('Error saving transfer to database:', err);
+  }
 
   return { success: true, message: 'Transfer berhasil diproses.' };
 };
 
 export const getDepositHistory = async (userId: string): Promise<DepositTransaction[]> => {
+  let dbDeposits: DepositTransaction[] = [];
   try {
     const { data, error } = await supabase
       .from('transactions')
@@ -237,27 +293,48 @@ export const getDepositHistory = async (userId: string): Promise<DepositTransact
       .eq('type', TransactionType.DEPOSIT)
       .order('date', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      return data.map((t: any) => ({
+    if (!error && Array.isArray(data)) {
+      dbDeposits = data.map((t: any) => ({
         id: t.id,
         userId: t.user_id,
         type: TransactionType.DEPOSIT,
-        amount: t.amount,
-        method: t.method,
-        status: t.status,
+        amount: Number(t.amount),
+        method: t.method || 'Bank Transfer',
+        status: t.status as TransactionStatus,
         date: t.date,
         companyBankInfoList: [] 
       }));
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.warn('Failed to fetch deposits from database:', err);
   }
 
-  const localTxs = getLocalTransactions();
-  return localTxs.filter(t => t.userId === userId && t.type === TransactionType.DEPOSIT) as DepositTransaction[];
+  const localTxs = getLocalTransactions().filter(
+    t => t.userId === userId && t.type === TransactionType.DEPOSIT
+  ) as DepositTransaction[];
+
+  const map = new Map<string, DepositTransaction>();
+  for (const item of localTxs) {
+    map.set(item.id, item);
+  }
+  for (const item of dbDeposits) {
+    map.set(item.id, item);
+  }
+
+  const result = Array.from(map.values()).sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  const allOtherLocal = getLocalTransactions().filter(
+    t => !(t.userId === userId && t.type === TransactionType.DEPOSIT)
+  );
+  saveLocalTransactions([...result, ...allOtherLocal]);
+
+  return result;
 };
 
 export const getWithdrawalHistory = async (userId: string): Promise<WithdrawalTransaction[]> => {
+  let dbWithdrawals: WithdrawalTransaction[] = [];
   try {
     const { data, error } = await supabase
       .from('transactions')
@@ -266,126 +343,241 @@ export const getWithdrawalHistory = async (userId: string): Promise<WithdrawalTr
       .eq('type', TransactionType.WITHDRAWAL)
       .order('date', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      return data.map((t: any) => ({
+    if (!error && Array.isArray(data)) {
+      dbWithdrawals = data.map((t: any) => ({
         id: t.id,
         userId: t.user_id,
         type: TransactionType.WITHDRAWAL,
-        amount: t.amount,
-        method: t.method,
-        bankOrEwalletName: t.bank_or_ewallet_name,
-        accountNumber: t.account_number,
-        accountHolderName: t.account_holder_name,
-        status: t.status,
+        amount: Number(t.amount),
+        method: t.method || 'Bank Transfer',
+        bankOrEwalletName: t.bank_or_ewallet_name || '',
+        accountNumber: t.account_number || '',
+        accountHolderName: t.account_holder_name || '',
+        status: t.status as TransactionStatus,
         date: t.date,
       }));
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.warn('Failed to fetch withdrawals from database:', err);
   }
 
-  const localTxs = getLocalTransactions();
-  return localTxs.filter(t => t.userId === userId && t.type === TransactionType.WITHDRAWAL) as WithdrawalTransaction[];
+  const localTxs = getLocalTransactions().filter(
+    t => t.userId === userId && t.type === TransactionType.WITHDRAWAL
+  ) as WithdrawalTransaction[];
+
+  const map = new Map<string, WithdrawalTransaction>();
+  for (const item of localTxs) {
+    map.set(item.id, item);
+  }
+  for (const item of dbWithdrawals) {
+    map.set(item.id, item);
+  }
+
+  const result = Array.from(map.values()).sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  const allOtherLocal = getLocalTransactions().filter(
+    t => !(t.userId === userId && t.type === TransactionType.WITHDRAWAL)
+  );
+  saveLocalTransactions([...result, ...allOtherLocal]);
+
+  return result;
 };
 
 export const getAllTransactions = async (): Promise<Transaction[]> => {
+  let dbTransactions: Transaction[] = [];
   try {
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
       .order('date', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      return data.map((t: any) => {
+    if (!error && Array.isArray(data)) {
+      dbTransactions = data.map((t: any) => {
         const base = {
           id: t.id,
           userId: t.user_id,
-          amount: t.amount,
-          status: t.status,
+          amount: Number(t.amount),
+          status: t.status as TransactionStatus,
           date: t.date,
           method: t.method,
         };
         if (t.type === TransactionType.DEPOSIT) {
           return { ...base, type: TransactionType.DEPOSIT } as DepositTransaction;
         } else if (t.type === TransactionType.TRANSFER) {
-          return { ...base, type: TransactionType.TRANSFER, recipientEmail: t.bank_or_ewallet_name } as TransferTransaction;
+          return {
+            ...base,
+            type: TransactionType.TRANSFER,
+            recipientEmail: t.recipient_email || t.bank_or_ewallet_name || ''
+          } as TransferTransaction;
         } else {
           return {
             ...base,
             type: TransactionType.WITHDRAWAL,
-            bankOrEwalletName: t.bank_or_ewallet_name,
-            accountNumber: t.account_number,
-            accountHolderName: t.account_holder_name
+            bankOrEwalletName: t.bank_or_ewallet_name || '',
+            accountNumber: t.account_number || '',
+            accountHolderName: t.account_holder_name || ''
           } as WithdrawalTransaction;
         }
       });
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.warn('Failed to fetch all transactions from database:', err);
   }
 
-  return getLocalTransactions();
+  const localTxs = getLocalTransactions();
+  const map = new Map<string, Transaction>();
+  for (const item of localTxs) {
+    map.set(item.id, item);
+  }
+  for (const item of dbTransactions) {
+    map.set(item.id, item);
+  }
+
+  const result = Array.from(map.values()).sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  saveLocalTransactions(result);
+  return result;
 };
 
 export const updateDepositStatus = async (depositId: string, status: TransactionStatus): Promise<boolean> => {
-  const localTxs = getLocalTransactions();
-  const tx = localTxs.find(t => t.id === depositId);
-  if (tx && tx.type === TransactionType.DEPOSIT) {
+  const allTxs = await getAllTransactions();
+  const tx = allTxs.find(t => t.id === depositId && t.type === TransactionType.DEPOSIT) as DepositTransaction | undefined;
+
+  if (tx) {
     const oldStatus = tx.status;
-    tx.status = status;
-    saveLocalTransactions(localTxs);
+    if (oldStatus === status) return true;
 
     const users = await authService.getAllUsers();
-    const u = users.find(usr => usr.id === tx.userId);
-    if (u) {
+    const targetUser = users.find(u => u.id === tx.userId);
+
+    if (targetUser) {
       if (oldStatus !== TransactionStatus.SUCCESS && status === TransactionStatus.SUCCESS) {
-        await authService.updateUserBalance(u.id, u.balance + tx.amount);
-        await authService.addUserNotification(u.id, `Deposit Berhasil: Saldo Rp ${tx.amount.toLocaleString('en-US')} telah ditambahkan.`);
+        // Approve deposit -> tambahkan saldo
+        const newBalance = targetUser.balance + tx.amount;
+        await authService.updateUserBalance(targetUser.id, newBalance);
+        await authService.addUserNotification(
+          targetUser.id,
+          `Deposit Berhasil (DONE): Saldo sebesar Rp ${tx.amount.toLocaleString('id-ID')} telah ditambahkan ke akun Anda.`
+        );
       } else if (oldStatus === TransactionStatus.SUCCESS && status !== TransactionStatus.SUCCESS) {
-        await authService.updateUserBalance(u.id, Math.max(0, u.balance - tx.amount));
-        await authService.addUserNotification(u.id, `Koreksi Deposit: Status deposit diubah menjadi ${status}. Saldo disesuaikan.`);
+        // Koreksi deposit yang tadinya sudah success -> kurangi saldo
+        const newBalance = Math.max(0, targetUser.balance - tx.amount);
+        await authService.updateUserBalance(targetUser.id, newBalance);
+        await authService.addUserNotification(
+          targetUser.id,
+          `Koreksi Deposit: Status deposit (ID: ${tx.id}) diubah menjadi ${status}. Saldo disesuaikan.`
+        );
+      } else {
+        await authService.addUserNotification(
+          targetUser.id,
+          `Status deposit (ID: ${tx.id}) diubah menjadi ${status} oleh Admin.`
+        );
       }
     }
+
+    tx.status = status;
+    saveLocalTransactions(allTxs);
+
+    try {
+      const { error } = await supabase.from('transactions').update({ status }).eq('id', depositId);
+      if (error) console.warn('Supabase update deposit error:', error);
+    } catch (err) {
+      console.warn('Supabase update deposit status exception:', err);
+    }
+
+    return true;
   }
 
   try {
     await supabase.from('transactions').update({ status }).eq('id', depositId);
+    return true;
   } catch {
-    // handled
+    return false;
   }
-
-  return true;
 };
 
 export const updateWithdrawalStatus = async (withdrawalId: string, status: TransactionStatus): Promise<boolean> => {
-  const localTxs = getLocalTransactions();
-  const tx = localTxs.find(t => t.id === withdrawalId);
-  if (tx && tx.type === TransactionType.WITHDRAWAL) {
+  const allTxs = await getAllTransactions();
+  const tx = allTxs.find(t => t.id === withdrawalId && t.type === TransactionType.WITHDRAWAL) as WithdrawalTransaction | undefined;
+
+  if (tx) {
+    const oldStatus = tx.status;
+    if (oldStatus === status) return true;
+
     const isRefundedStatus = (s: TransactionStatus) => 
       [TransactionStatus.REJECTED, TransactionStatus.CANCELLED, TransactionStatus.FAILED].includes(s);
 
-    const currentlyRefunded = isRefundedStatus(tx.status);
-    const willBeRefunded = isRefundedStatus(status);
-
-    tx.status = status;
-    saveLocalTransactions(localTxs);
+    const wasRefunded = isRefundedStatus(oldStatus);
+    const isNowRefunded = isRefundedStatus(status);
 
     const users = await authService.getAllUsers();
-    const u = users.find(usr => usr.id === tx.userId);
-    if (u) {
-      if (currentlyRefunded && !willBeRefunded) {
-        await authService.updateUserBalance(u.id, Math.max(0, u.balance - tx.amount));
-      } else if (!currentlyRefunded && willBeRefunded) {
-        await authService.updateUserBalance(u.id, u.balance + tx.amount);
+    const targetUser = users.find(u => u.id === tx.userId);
+
+    if (targetUser) {
+      if (!wasRefunded && isNowRefunded) {
+        // Penarikan ditolak/batal -> kembalikan saldo ke user!
+        const refundedBalance = targetUser.balance + tx.amount;
+        await authService.updateUserBalance(targetUser.id, refundedBalance);
+        await authService.addUserNotification(
+          targetUser.id,
+          `Penarikan dana sebesar Rp ${tx.amount.toLocaleString('id-ID')} (ID: ${tx.id}) DITOLAK / DIBATALKAN oleh Admin. Saldo telah dikembalikan ke akun Anda.`
+        );
+      } else if (wasRefunded && !isNowRefunded) {
+        // Sebelumnya ditolak (sudah di-refund), sekarang diaktifkan kembali ke PENDING atau SUCCESS -> kurangi saldo lagi
+        const deductedBalance = Math.max(0, targetUser.balance - tx.amount);
+        await authService.updateUserBalance(targetUser.id, deductedBalance);
+        if (status === TransactionStatus.SUCCESS) {
+          await authService.addUserNotification(
+            targetUser.id,
+            `Penarikan dana sebesar Rp ${tx.amount.toLocaleString('id-ID')} (ID: ${tx.id}) telah SELESAI (DONE) diproses ke ${tx.bankOrEwalletName} (${tx.accountNumber}).`
+          );
+        } else if (status === TransactionStatus.PENDING) {
+          await authService.addUserNotification(
+            targetUser.id,
+            `Status penarikan dana sebesar Rp ${tx.amount.toLocaleString('id-ID')} (ID: ${tx.id}) diubah menjadi PENDING (Dalam Proses).`
+          );
+        }
+      } else if (status === TransactionStatus.SUCCESS && oldStatus === TransactionStatus.PENDING) {
+        // Pending -> Selesai / Done
+        await authService.addUserNotification(
+          targetUser.id,
+          `Penarikan dana sebesar Rp ${tx.amount.toLocaleString('id-ID')} (ID: ${tx.id}) telah SELESAI (DONE) diproses ke ${tx.bankOrEwalletName} (${tx.accountNumber}).`
+        );
+      } else if (status === TransactionStatus.PENDING && oldStatus === TransactionStatus.SUCCESS) {
+        // Done -> Pending
+        await authService.addUserNotification(
+          targetUser.id,
+          `Status penarikan dana sebesar Rp ${tx.amount.toLocaleString('id-ID')} (ID: ${tx.id}) diubah kembali menjadi PENDING oleh Admin.`
+        );
       }
     }
+
+    tx.status = status;
+    saveLocalTransactions(allTxs);
+
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .update({ status })
+        .eq('id', withdrawalId);
+      if (error) {
+        console.warn('Supabase update withdrawal status error:', error);
+      }
+    } catch (err) {
+      console.warn('Supabase update withdrawal status exception:', err);
+    }
+
+    return true;
   }
 
   try {
     await supabase.from('transactions').update({ status }).eq('id', withdrawalId);
+    return true;
   } catch {
-    // handled
+    return false;
   }
-
-  return true;
 };

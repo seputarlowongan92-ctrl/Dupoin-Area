@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
 import {
   DepositTransaction,
@@ -13,6 +12,17 @@ import * as transactionService from '../services/transactionService';
 import * as authService from '../services/authService';
 import { useAuth } from './AuthContext';
 
+export interface WithdrawResult {
+  success: boolean;
+  transactionId?: string;
+  message?: string;
+}
+
+export interface DepositResult {
+  success: boolean;
+  transactionId?: string;
+}
+
 interface TransactionContextType {
   balance: number;
   accountMode: 'real' | 'demo';
@@ -26,16 +36,17 @@ interface TransactionContextType {
   addNotification: (message: string) => void;
   markNotificationAsRead: (notificationId: string) => void;
   deposit: (amount: number) => Promise<boolean>;
-  withdraw: (amount: number, method: string, bankOrEwalletName: string, accountNumber: string, accountHolderName: string) => Promise<boolean>;
+  withdraw: (amount: number, method: string, bankOrEwalletName: string, accountNumber: string, accountHolderName: string) => Promise<WithdrawResult>;
   transfer: (recipientEmail: string, amount: number) => Promise<{ success: boolean; message: string }>;
-  updateDepositStatus: (depositId: string, status: TransactionStatus) => void;
-  updateWithdrawalStatus: (withdrawalId: string, status: TransactionStatus) => void;
+  updateDepositStatus: (depositId: string, status: TransactionStatus) => Promise<boolean>;
+  updateWithdrawalStatus: (withdrawalId: string, status: TransactionStatus) => Promise<boolean>;
   setCompanyBankInfoList: (info: CompanyBankInfo[]) => void;
-  adminUpdateUserBalance: (userId: string, amount: number, type: 'set' | 'add') => void;
+  adminUpdateUserBalance: (userId: string, amount: number, type: 'set' | 'add') => Promise<void>;
   adminCreateUser: (userData: Omit<User, 'id' | 'username' | 'notifications'> & { password: string }) => Promise<boolean>;
   getAllTransactions: () => Promise<Transaction[]>;
   getAllUsers: () => Promise<User[]>;
-  updateUserVerification: (userId: string, isVerified: boolean) => void;
+  updateUserVerification: (userId: string, isVerified: boolean) => Promise<void>;
+  fetchTransactions: () => Promise<void>;
 }
 
 const TransactionContext = createContext<TransactionContextType | undefined>(undefined);
@@ -55,12 +66,19 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     if (user) {
       setIsLoadingTransactions(true);
       setBalance(user.balance);
-      const deposits = await transactionService.getDepositHistory(user.id);
-      const withdrawals = await transactionService.getWithdrawalHistory(user.id);
-      setDepositHistory(deposits);
-      setWithdrawalHistory(withdrawals);
-      setNotifications(user.notifications);
-      setIsLoadingTransactions(false);
+      try {
+        const [deposits, withdrawals] = await Promise.all([
+          transactionService.getDepositHistory(user.id),
+          transactionService.getWithdrawalHistory(user.id)
+        ]);
+        setDepositHistory(deposits);
+        setWithdrawalHistory(withdrawals);
+        setNotifications(user.notifications || []);
+      } catch (err) {
+        console.error('Error fetching transactions:', err);
+      } finally {
+        setIsLoadingTransactions(false);
+      }
     } else {
       setBalance(0);
       setDepositHistory([]);
@@ -90,14 +108,14 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
   const addNotification = async (message: string) => {
     if (user) {
       await authService.addUserNotification(user.id, message);
-      refreshUser();
+      await refreshUser();
     }
   };
 
   const markNotificationAsRead = async (notificationId: string) => {
     if (user) {
       await authService.updateUserNotification(user.id, notificationId, true);
-      refreshUser();
+      await refreshUser();
     }
   };
 
@@ -112,15 +130,15 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     }
     setIsLoadingTransactions(true);
     setTransactionError(null);
-    const success = await transactionService.deposit(user.id, amount);
-    if (success) {
-      refreshUser();
-      fetchTransactions();
+    const result = await transactionService.deposit(user.id, amount);
+    if (result.success) {
+      await refreshUser();
+      await fetchTransactions();
     } else {
       setTransactionError('Deposit failed.');
     }
     setIsLoadingTransactions(false);
-    return success;
+    return result.success;
   };
 
   const withdraw = async (
@@ -129,23 +147,26 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     bankOrEwalletName: string,
     accountNumber: string,
     accountHolderName: string,
-  ): Promise<boolean> => {
+  ): Promise<WithdrawResult> => {
     if (accountMode === 'demo') {
-      setTransactionError('Withdrawals are disabled in Demo mode.');
-      return false;
+      const msg = 'Penarikan dinonaktifkan pada akun Demo.';
+      setTransactionError(msg);
+      return { success: false, message: msg };
     }
     if (!user) {
-      setTransactionError('You must be logged in to withdraw.');
-      return false;
+      const msg = 'Anda harus login untuk melakukan penarikan.';
+      setTransactionError(msg);
+      return { success: false, message: msg };
     }
     if (user.balance < amount) {
-      setTransactionError('Insufficient balance.');
-      return false;
+      const msg = 'Saldo tidak mencukupi untuk melakukan penarikan.';
+      setTransactionError(msg);
+      return { success: false, message: msg };
     }
 
     setIsLoadingTransactions(true);
     setTransactionError(null);
-    const success = await transactionService.withdraw(
+    const result = await transactionService.withdraw(
       user.id,
       amount,
       method,
@@ -153,32 +174,35 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
       accountNumber,
       accountHolderName,
     );
-    if (success) {
+    if (result.success && result.transaction) {
       setBalance(prev => Math.max(0, prev - amount));
       await refreshUser();
       await fetchTransactions();
+      setIsLoadingTransactions(false);
+      return { success: true, transactionId: result.transaction.id };
     } else {
-      setTransactionError('Withdrawal failed.');
+      const msg = result.message || 'Penarikan gagal diproses.';
+      setTransactionError(msg);
+      setIsLoadingTransactions(false);
+      return { success: false, message: msg };
     }
-    setIsLoadingTransactions(false);
-    return success;
   };
 
   const transfer = async (recipientEmail: string, amount: number): Promise<{ success: boolean; message: string }> => {
     if (accountMode === 'demo') {
-        return { success: false, message: 'Transfer disabled in Demo mode.' };
+      return { success: false, message: 'Transfer disabled in Demo mode.' };
     }
     if (!user) {
-        return { success: false, message: 'Login required.' };
+      return { success: false, message: 'Login required.' };
     }
     setIsLoadingTransactions(true);
     const result = await transactionService.transfer(user.id, recipientEmail, amount);
     if (result.success) {
-        setBalance(prev => Math.max(0, prev - amount));
-        await refreshUser();
-        await fetchTransactions();
+      setBalance(prev => Math.max(0, prev - amount));
+      await refreshUser();
+      await fetchTransactions();
     } else {
-        setTransactionError(result.message);
+      setTransactionError(result.message);
     }
     setIsLoadingTransactions(false);
     return result;
@@ -188,12 +212,12 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     const users = await authService.getAllUsers();
     const targetUser = users.find(u => u.id === userId);
     if (targetUser) {
-        const newBalance = type === 'set' ? amount : targetUser.balance + amount;
-        await authService.updateUserBalance(userId, newBalance);
-        if (user?.id === userId) {
-            await refreshUser();
-            await fetchTransactions();
-        }
+      const newBalance = type === 'set' ? amount : targetUser.balance + amount;
+      await authService.updateUserBalance(userId, newBalance);
+      if (user?.id === userId) {
+        await refreshUser();
+        await fetchTransactions();
+      }
     }
   };
 
@@ -204,7 +228,7 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     return !!newUser;
   };
 
-  const updateDepositStatus = async (depositId: string, status: TransactionStatus) => {
+  const updateDepositStatus = async (depositId: string, status: TransactionStatus): Promise<boolean> => {
     setIsLoadingTransactions(true);
     const success = await transactionService.updateDepositStatus(depositId, status);
     if (success) {
@@ -214,9 +238,10 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
       setTransactionError('Failed to update deposit status.');
     }
     setIsLoadingTransactions(false);
+    return success;
   };
 
-  const updateWithdrawalStatus = async (withdrawalId: string, status: TransactionStatus) => {
+  const updateWithdrawalStatus = async (withdrawalId: string, status: TransactionStatus): Promise<boolean> => {
     setIsLoadingTransactions(true);
     const success = await transactionService.updateWithdrawalStatus(withdrawalId, status);
     if (success) {
@@ -226,19 +251,21 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
       setTransactionError('Failed to update withdrawal status.');
     }
     setIsLoadingTransactions(false);
+    return success;
   };
 
   const updateCompanyBankInfoList = async (infoList: CompanyBankInfo[]) => {
     await transactionService.setCompanyBankInfoList(infoList);
     setCompanyBankInfoListState(infoList);
-    if(user?.isAdmin) addNotification('Company bank information updated.');
+    if (user?.isAdmin) addNotification('Company bank information updated.');
   };
 
   const getAllTransactions = useCallback(async () => transactionService.getAllTransactions(), []);
   const getAllUsers = useCallback(async () => authService.getAllUsers(), []);
+  
   const updateUserVerification = async (userId: string, isVerified: boolean) => {
     await authService.updateUserInfo({ id: userId, isVerified });
-    refreshUser();
+    await refreshUser();
   };
 
   const value = {
@@ -248,7 +275,7 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     depositHistory,
     withdrawalHistory,
     notifications,
-    companyBankInfoList: companyBankInfoList,
+    companyBankInfoList,
     isLoadingTransactions,
     transactionError,
     addNotification,
@@ -264,6 +291,7 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     updateUserVerification,
     adminUpdateUserBalance,
     adminCreateUser,
+    fetchTransactions,
   };
 
   return <TransactionContext.Provider value={value}>{children}</TransactionContext.Provider>;

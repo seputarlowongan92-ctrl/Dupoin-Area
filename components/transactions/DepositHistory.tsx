@@ -2,87 +2,112 @@ import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../context/TransactionContext';
 import { DepositTransaction, TransactionStatus } from '../../types';
+import { CheckCircleIcon, ClockIcon, XCircleIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 
 const DepositHistory: React.FC = () => {
   const { user } = useAuth();
-  const { depositHistory, isLoadingTransactions } = useTransactions();
-
-  const getStatusClass = (status: TransactionStatus): string => {
-    switch (status) {
-      case TransactionStatus.SUCCESS:
-        return 'bg-success/20 text-success';
-      case TransactionStatus.PENDING:
-        return 'bg-warning/20 text-warning';
-      case TransactionStatus.REJECTED:
-      case TransactionStatus.FAILED:
-        return 'bg-danger/20 text-danger';
-      default:
-        return 'bg-gray-700 text-gray-300';
-    }
-  };
+  const { depositHistory, isLoadingTransactions, fetchTransactions } = useTransactions();
 
   if (!user) {
     return (
-      <div className="container mx-auto text-center text-gray-400">
-        Please log in to view your deposit history.
+      <div className="container mx-auto text-center text-gray-500 py-12">
+        Silakan login terlebih dahulu untuk melihat riwayat deposit.
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto">
-      <h2 className="text-2xl sm:text-3xl font-bold text-white mb-6">Deposit History</h2>
+    <div className="container mx-auto font-sans">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#45545C]">Riwayat Deposit</h2>
+          <p className="text-sm text-[#89939D]">Daftar seluruh riwayat deposit dana Anda.</p>
+        </div>
+        <button
+          onClick={() => fetchTransactions()}
+          disabled={isLoadingTransactions}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-[#45545C] hover:bg-slate-50 transition-colors shadow-sm cursor-pointer"
+        >
+          <ArrowPathIcon className={`w-3.5 h-3.5 text-[#08B9ED] ${isLoadingTransactions ? 'animate-spin' : ''}`} />
+          <span>Refresh</span>
+        </button>
+      </div>
 
-      <div className="bg-darkblue2 p-6 rounded-lg shadow-md overflow-x-auto">
+      <div className="bg-white border border-gray-200 p-6 rounded-xl shadow-sm overflow-x-auto">
         {isLoadingTransactions ? (
-          <p className="text-center text-gray-400">Loading deposit history...</p>
+          <p className="text-center text-gray-400 py-8">Memuat riwayat deposit dari database...</p>
         ) : depositHistory.length === 0 ? (
-          <p className="text-center text-gray-400">No deposit transactions found.</p>
+          <p className="text-center text-gray-400 py-8">Belum ada riwayat deposit.</p>
         ) : (
-          <table className="min-w-full divide-y divide-gray-700">
-            <thead className="bg-darkblue">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-[#F8FAFC]">
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Date
+                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#89939D] uppercase tracking-wider">
+                  Tanggal & ID
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Amount
+                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#89939D] uppercase tracking-wider">
+                  Jumlah Deposit
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Method
+                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#89939D] uppercase tracking-wider">
+                  Metode
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#89939D] uppercase tracking-wider">
                   Status
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  ID
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-800">
-              {depositHistory.map((transaction: DepositTransaction) => (
-                <tr key={transaction.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-300">
-                    {new Date(transaction.date).toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-white font-medium font-sans tabular-nums">
-                    Rp {transaction.amount.toLocaleString('en-US')}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-300">
-                    {transaction.method}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusClass(transaction.status)}`}
-                    >
-                      {transaction.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500 font-sans tabular-nums">
-                    {transaction.id}
-                  </td>
-                </tr>
-              ))}
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {depositHistory.map((transaction: DepositTransaction) => {
+                const isSuccess = transaction.status === TransactionStatus.SUCCESS;
+                const isPending = transaction.status === TransactionStatus.PENDING;
+                const isRejected = transaction.status === TransactionStatus.REJECTED;
+
+                return (
+                  <tr key={transaction.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-xs font-bold text-[#45545C] font-mono">{transaction.id}</div>
+                      <div className="text-[11px] text-[#89939D]">
+                        {new Date(transaction.date).toLocaleDateString('id-ID', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        })}, {new Date(transaction.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-[#45545C] font-bold font-sans tabular-nums">
+                      Rp {transaction.amount.toLocaleString('id-ID')}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-xs text-[#45545C]">
+                      {transaction.method}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {isSuccess && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#00C99A]/15 text-[#009E78] border border-[#00C99A]/30">
+                          <CheckCircleIcon className="w-4 h-4 text-[#00C99A]" />
+                          <span>Done (Berhasil)</span>
+                        </span>
+                      )}
+                      {isPending && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-300 animate-pulse">
+                          <ClockIcon className="w-4 h-4 text-amber-600" />
+                          <span>Pending</span>
+                        </span>
+                      )}
+                      {isRejected && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#F20D16]/10 text-[#F20D16] border border-[#F20D16]/30">
+                          <XCircleIcon className="w-4 h-4 text-[#F20D16]" />
+                          <span>Ditolak</span>
+                        </span>
+                      )}
+                      {!isSuccess && !isPending && !isRejected && (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700">
+                          {transaction.status}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
