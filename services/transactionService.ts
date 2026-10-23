@@ -128,7 +128,7 @@ export const deposit = async (userId: string, amount: number): Promise<{ success
   // Notifikasi member
   await authService.addUserNotification(
     userId,
-    `Deposit sebesar Rp ${amount.toLocaleString('id-ID')} (ID: ${txId}) sedang diproses. Mohon kirim bukti transfer ke admin.`
+    `Deposit Rp ${amount.toLocaleString('id-ID')} (ID: ${txId}) dibuat. UNTUK MELAKUKAN DEPOSIT HANYA MELALUI TELEGRAM ADMIN , SILAHKAN HUBUNGI ADMIN DAN ISI FORMULIR YANG TELAH DIBERIKAN . TERIMAKASIH`
   );
 
   // Simpan ke database Supabase

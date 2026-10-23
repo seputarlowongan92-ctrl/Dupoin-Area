@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import Input from '../common/Input';
 import Button from '../common/Button';
-import { BanknotesIcon, CreditCardIcon } from '@heroicons/react/24/outline';
+import { BanknotesIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../context/TransactionContext';
 
 const DepositForm: React.FC = () => {
   const { user } = useAuth();
-  const { deposit, companyBankInfoList, isLoadingTransactions, transactionError, addNotification } = useTransactions();
+  const { deposit, isLoadingTransactions, transactionError } = useTransactions();
   const [amount, setAmount] = useState<string>('');
   const [errors, setErrors] = useState<{ amount?: string; api?: string }>({});
   const [depositSuccessMessage, setDepositSuccessMessage] = useState<string | null>(null);
@@ -26,7 +26,7 @@ const DepositForm: React.FC = () => {
 
     if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) {
       newErrors.amount = 'Please enter a valid amount greater than 0.';
-    } else if (parsedAmount < 10000) { // Example minimum deposit
+    } else if (parsedAmount < 10000) {
       newErrors.amount = 'Minimum deposit amount is Rp 10,000.';
     }
     setErrors(newErrors);
@@ -43,7 +43,7 @@ const DepositForm: React.FC = () => {
     const success = await deposit(parseFloat(amount));
 
     if (success) {
-      setDepositSuccessMessage(`Deposit dalam proses, mohon kirim bukti transfer ke admin.`);
+      setDepositSuccessMessage('UNTUK MELAKUKAN DEPOSIT HANYA MELALUI TELEGRAM ADMIN , SILAHKAN HUBUNGI ADMIN DAN ISI FORMULIR YANG TELAH DIBERIKAN . TERIMAKASIH');
       setAmount('');
       setErrors({});
     } else {
@@ -52,100 +52,80 @@ const DepositForm: React.FC = () => {
   };
 
   const formatCurrencyInput = (value: string): string => {
-    // Remove non-numeric characters first
     const numericValue = value.replace(/\D/g, '');
     if (!numericValue) return '';
-
-    // Format as Rupiah
     return parseInt(numericValue, 10).toLocaleString('en-US');
   };
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value;
-    // Store only numeric value in state for calculation, display formatted value in input
     const numericValue = rawValue.replace(/\D/g, '');
     setAmount(numericValue);
     setErrors(prev => ({ ...prev, amount: undefined, api: undefined }));
   };
 
   return (
-    <div className="container mx-auto">
-      <h2 className="text-2xl sm:text-3xl font-bold text-white mb-6">Deposit Funds</h2>
+    <div className="container mx-auto font-sans">
+      <h2 className="text-2xl sm:text-3xl font-bold text-[#45545C] mb-6">Deposit Dana</h2>
 
-      <div className="bg-darkblue2 p-6 rounded-lg shadow-md">
+      <div className="bg-white border border-gray-200 p-6 sm:p-8 rounded-2xl shadow-sm">
         {errors.api && (
-          <div className="bg-danger/20 text-danger p-3 rounded-md mb-4 text-sm">
+          <div className="bg-[#F20D16]/10 text-[#D10B12] p-4 rounded-xl mb-6 text-sm border border-[#F20D16]/30">
             {errors.api}
           </div>
         )}
         {depositSuccessMessage && (
-          <div className="bg-success/20 text-success p-3 rounded-md mb-4 text-sm">
+          <div className="bg-[#00C99A]/15 text-[#008A69] p-4 rounded-xl mb-6 text-sm font-bold border border-[#00C99A]/30">
             {depositSuccessMessage}
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
-          <Input
-            id="depositAmount"
-            label="Amount (Rp)"
-            type="text" // Use text to allow custom formatting
-            placeholder="e.g., 100.000"
-            icon={<BanknotesIcon />}
-            value={formatCurrencyInput(amount)}
-            onChange={handleAmountChange}
-            error={errors.amount}
-            inputMode="numeric"
-          />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <Input
+              id="depositAmount"
+              label="Jumlah Deposit (Rp)"
+              type="text"
+              placeholder="Contoh: 1.000.000"
+              icon={<BanknotesIcon />}
+              value={formatCurrencyInput(amount)}
+              onChange={handleAmountChange}
+              error={errors.amount}
+              inputMode="numeric"
+            />
 
-          <h3 className="text-xl font-semibold text-white mt-8 mb-4">Detail Rekening Bank Perusahaan</h3>
-          <div className="space-y-4">
-            {(companyBankInfoList && companyBankInfoList.length > 0 ? companyBankInfoList : [
-              {
-                bankName: 'Bank Rakyat Indonesia (BRI)',
-                accountNumber: '367801004397504',
-                accountHolderName: 'GUSTI PUTRAP N'
-              },
-              {
-                bankName: 'BANK MUAMALAT',
-                accountNumber: '3280019029',
-                accountHolderName: 'MUHAMAD DZAKWAN HAKIM'
-              }
-            ]).map((bank, index) => (
-              <div key={index} className="bg-darkblue p-4 rounded-md border border-primary/50 relative overflow-hidden">
-                {index === 0 && (
-                  <div className="absolute top-0 right-0 bg-primary text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-bl">
-                    Rekomendasi
-                  </div>
-                )}
-                <p className="text-gray-300 flex items-center mb-2">
-                  <CreditCardIcon className="h-5 w-5 mr-2 text-primary" />
-                  <span className="font-bold text-white">{bank.bankName}</span>
-                </p>
-                <p className="text-gray-300 flex items-center mb-2">
-                  <span className="font-medium mr-2 text-gray-400">No. Rekening:</span> 
-                  <span className="font-mono text-white text-lg tracking-wider">{bank.accountNumber}</span>
-                </p>
-                <p className="text-gray-300 flex items-center">
-                  <span className="font-medium mr-2 text-gray-400">Atas Nama:</span> 
-                  <span className="text-white font-medium uppercase">{bank.accountHolderName}</span>
-                </p>
-              </div>
-            ))}
-          </div>
-
-          <p className="text-sm text-gray-500 mt-4">
-            Silakan transfer dengan jumlah yang tepat ke salah satu rekening bank perusahaan di atas. Deposit Anda akan diproses setelah verifikasi bukti transfer.
-          </p>
-
-          <div className="mt-8">
             <Button type="submit" fullWidth isLoading={isLoadingTransactions} disabled={isLoadingTransactions}>
-              Submit Deposit Request
+              Kirim Permintaan Deposit
             </Button>
-          </div>
-        </form>
+          </form>
 
-        <div className="mt-8 text-center">
-          <p className="text-gray-400">View your deposit history <a href="/#/deposit-history" className="text-primary hover:underline">here</a>.</p>
+          {/* Announcement Card (Menggantikan Rekening Perusahaan) */}
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-6 sm:p-8 text-center space-y-4">
+            <div className="w-12 h-12 bg-amber-500 text-white rounded-full flex items-center justify-center mx-auto shadow-sm">
+              <InformationCircleIcon className="w-7 h-7" />
+            </div>
+
+            <div className="text-amber-950 font-black text-sm sm:text-base leading-relaxed tracking-wider uppercase">
+              "UNTUK MELAKUKAN DEPOSIT HANYA MELALUI TELEGRAM ADMIN , SILAHKAN HUBUNGI ADMIN DAN ISI FORMULIR YANG TELAH DIBERIKAN . TERIMAKASIH"
+            </div>
+
+            <div className="pt-2">
+              <a 
+                href="https://t.me/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-[#0088cc] hover:bg-[#0077b5] text-white font-bold py-2.5 px-6 rounded-xl text-xs uppercase tracking-wider transition-all shadow-sm"
+              >
+                Hubungi Telegram Admin
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8 pt-4 border-t border-gray-100 text-center">
+          <p className="text-[#89939D] text-xs">
+            Lihat riwayat deposit Anda <a href="/#/deposit-history" className="text-[#08B9ED] font-bold hover:underline">di sini</a>.
+          </p>
         </div>
       </div>
     </div>
